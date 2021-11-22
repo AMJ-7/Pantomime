@@ -18,7 +18,7 @@ open class ManifestBuilder {
     */
     fileprivate func parseMasterPlaylist(_ reader: BufferedReader, onMediaPlaylist:
             ((_ playlist: MediaPlaylist) -> Void)?) -> MasterPlaylist {
-        var masterPlaylist = MasterPlaylist()
+        let masterPlaylist = MasterPlaylist()
         var currentMediaPlaylist: MediaPlaylist?
 
         defer {
@@ -71,11 +71,10 @@ open class ManifestBuilder {
     /**
     * Parses Media Playlist manifests
     */
-    fileprivate func parseMediaPlaylist(_ reader: BufferedReader,
-                                        mediaPlaylist: MediaPlaylist = MediaPlaylist(),
-                                        onMediaSegment: ((_ segment: MediaSegment) -> Void)?) -> MediaPlaylist {
+    fileprivate func parseMediaPlaylist(_ reader: BufferedReader, mediaPlaylist: MediaPlaylist = MediaPlaylist(),
+                                    onMediaSegment: ((_ segment: MediaSegment) -> Void)?) -> MediaPlaylist {
         var currentSegment: MediaSegment?
-        var currentURI: String?
+       // var currentURI: String?
         var currentSequence = 0
 
         defer {
@@ -122,10 +121,15 @@ open class ManifestBuilder {
                 } else if line.hasPrefix("#EXTINF") {
                     currentSegment = MediaSegment()
                     do {
-                        let segmentDurationString = try line.replace("(.*):(\\d.*),(.*)", replacement: "$2")
-                        let segmentTitle = try line.replace("(.*):(\\d.*),(.*)", replacement: "$3")
+                        let generalRegex = "(.*):(-?[0-9]\\d*(\\.\\d+)?)(.*),(.*)"
+                        let segmentDurationString = try line.replace(generalRegex, replacement: "$2")
+                        let rawProperties = try line.replace(generalRegex, replacement: "$4")
+                        let segmentTitle = try line.replace(generalRegex, replacement: "$5")
+
+                        currentSegment!.properties = getProperties(in: rawProperties)
                         currentSegment!.duration = Float(segmentDurationString)
                         currentSegment!.title = segmentTitle
+
                     } catch {
                         print("Failed to parse the segment duration and title. Line = \(line)")
                     }
@@ -150,6 +154,14 @@ open class ManifestBuilder {
                     }
                 } else if line.hasPrefix("#EXT-X-DISCONTINUITY") {
                     currentSegment!.discontinuity = true
+                } else if line.hasPrefix("#EXTVLCOPT") {
+                    do {
+                        let generalRegex = "#EXTVLCOPT:http-user-agent="
+                        let userAgent = try line.replace(generalRegex, replacement: "$5")
+                        currentSegment!.userAgent = userAgent
+                    } catch {
+                        print("Failed to parse byte range. Line = \(line)")
+                    }
                 }
 
             } else if line.hasPrefix("#") {
@@ -171,6 +183,26 @@ open class ManifestBuilder {
         }
 
         return mediaPlaylist
+    }
+
+    func getProperties(in text: String) -> [String:String]? {
+        do {
+            let regex = try NSRegularExpression(pattern: "([a-zA-z-]*)=\"(.*?)\"")
+            let nsString = text as NSString
+            let results = regex.matches(in: text, range: NSRange(location: 0, length: nsString.length))
+            let keys = results.map { nsString.substring(with: $0.range(at: 1))}
+            let values = results.map { nsString.substring(with: $0.range(at: 2))}
+            var result = [String:String]()
+            for (index, value) in values.enumerated() {
+                result[keys[index]] = value
+                
+            }
+            return result
+//            return results.map { nsString.substring(with: $0.range)}
+        } catch let error {
+            print("Error: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /**
@@ -208,9 +240,8 @@ open class ManifestBuilder {
     *
     * Convenience method that uses a StringBufferedReader as source for the manifest.
     */
-    open func parseMediaPlaylistFromString(_ string: String,
-                                           mediaPlaylist: MediaPlaylist = MediaPlaylist(),
-                                           onMediaSegment:((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
+    open func parseMediaPlaylistFromString(_ string: String, mediaPlaylist: MediaPlaylist = MediaPlaylist(),
+                                            onMediaSegment:((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
         return parseMediaPlaylist(StringBufferedReader(string: string),
                 mediaPlaylist: mediaPlaylist, onMediaSegment: onMediaSegment)
     }
@@ -220,9 +251,8 @@ open class ManifestBuilder {
     *
     * Convenience method that uses a FileBufferedReader as source for the manifest.
     */
-    open func parseMediaPlaylistFromFile(_ path: String,
-                                         mediaPlaylist: MediaPlaylist = MediaPlaylist(),
-                                         onMediaSegment: ((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
+    open func parseMediaPlaylistFromFile(_ path: String, mediaPlaylist: MediaPlaylist = MediaPlaylist(),
+                                           onMediaSegment: ((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
         return parseMediaPlaylist(FileBufferedReader(path: path),
                 mediaPlaylist: mediaPlaylist, onMediaSegment: onMediaSegment)
     }
@@ -232,10 +262,8 @@ open class ManifestBuilder {
     *
     * Convenience method that uses a URLBufferedReader as source for the manifest.
     */
-    @discardableResult
-    open func parseMediaPlaylistFromURL(_ url: URL,
-                                        mediaPlaylist: MediaPlaylist = MediaPlaylist(),
-                                        onMediaSegment: ((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
+    @discardableResult open func parseMediaPlaylistFromURL(_ url: URL, mediaPlaylist: MediaPlaylist = MediaPlaylist(),
+                                          onMediaSegment: ((_ segment: MediaSegment) -> Void)? = nil) -> MediaPlaylist {
         return parseMediaPlaylist(URLBufferedReader(uri: url),
                 mediaPlaylist: mediaPlaylist, onMediaSegment: onMediaSegment)
     }
@@ -243,9 +271,9 @@ open class ManifestBuilder {
     /**
     * Parses the master manifest found at the URL and all the referenced media playlist manifests recursively.
     */
-    open func parse(_ url: URL,
-                    onMediaPlaylist: ((_ playlist: MediaPlaylist) -> Void)? = nil,
-                    onMediaSegment: ((_ segment: MediaSegment) -> Void)? = nil) -> MasterPlaylist {
+    open func parse(_ url: URL, onMediaPlaylist:
+                    ((_ playlist: MediaPlaylist) -> Void)? = nil, onMediaSegment:
+                    ((_ segment: MediaSegment) -> Void)? = nil) -> MasterPlaylist {
         // Parse master
         let master = parseMasterPlaylistFromURL(url, onMediaPlaylist: onMediaPlaylist)
         for playlist in master.playlists {
