@@ -158,7 +158,7 @@ open class ManifestBuilder {
                     do {
                         let generalRegex = "#EXTVLCOPT:http-user-agent="
                         let userAgent = try line.replace(generalRegex, replacement: "$5")
-                        currentSegment!.userAgent = userAgent
+                        currentSegment?.userAgent = userAgent
                     } catch {
                         print("Failed to parse byte range. Line = \(line)")
                     }
